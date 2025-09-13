@@ -212,15 +212,21 @@ def main():
     parser.add_argument("--csv", default=None, help="Output CSV path (default: ./logs/audi_YYYYmmdd_HHMMSS.csv).")
     parser.add_argument("--max-points", type=int, default=1200, help="Points kept in the live plot (default: 1200).")
     parser.add_argument("--demo", action="store_true", help="Run without hardware using synthetic data.")
+    parser.add_argument("--no-log", action="store_true", help="Disable CSV logging (plots only).")
     args = parser.parse_args()
 
     # Prepare CSV
     logs_dir = Path("./logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = Path(args.csv) if args.csv else logs_dir / f"audi_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    csv_file = csv_path.open("w", newline="")
-    writer = csv.DictWriter(csv_file, fieldnames=["timestamp_iso"] + FIELDS)
-    writer.writeheader()
+
+    writer = None
+    csv_file = None
+    csv_path = None
+    if not args.no_log:
+        csv_path = Path(args.csv) if args.csv else logs_dir / f"audi_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        csv_file = csv_path.open("w", newline="")
+        writer = csv.DictWriter(csv_file, fieldnames=["timestamp_iso"] + FIELDS)
+        writer.writeheader()
 
     reader = SerialReader(args.port, args.baud, demo=args.demo)
     reader.start()
@@ -308,10 +314,11 @@ def main():
         if row is None:
             return []
 
-        # Write CSV
-        row_out = {"timestamp_iso": dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")}
-        row_out.update(row)
-        writer.writerow(row_out)
+        # Write CSV (only if enabled)
+        if writer is not None:
+            row_out = {"timestamp_iso": dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")}
+            row_out.update(row)
+            writer.writerow(row_out)
 
         # Append data
         x.append(row["log_index"])
@@ -385,8 +392,13 @@ def main():
                 ln_oil_p, ln_fuel_p, ln_map, ln_ep1, ln_ep2, ln_u12, ln_u5, fault_text]
 
     ani = FuncAnimation(plt.gcf(), update, interval=100, blit=False)
+    plt.gcf()._keep_anim = ani  # keep a reference on the figure
 
-    print(f"[info] Logging to {csv_path.resolve()}")
+
+    if writer is not None and csv_path is not None:
+        print(f"[info] Logging to {csv_path.resolve()}")
+    else:
+        print("[info] CSV logging disabled (--no-log)")
     print("[info] Close the plot window or Ctrl+C to stop.")
     try:
         plt.show()

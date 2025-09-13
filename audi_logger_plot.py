@@ -5,6 +5,7 @@ import datetime as dt
 import sys
 import threading
 import time
+import os
 from collections import deque
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -66,6 +67,14 @@ class SerialReader(threading.Thread):
                 else:
                     raise RuntimeError("Multiple serial ports found. Specify --port explicitly.")
             self.ser = serial.Serial(self.port, self.baud, timeout=1)
+            # Windows-specific throughput improvements
+            if os.name == "nt":
+                try:
+                    # Increase kernel RX/TX buffers if pyserial exposes it (Windows only)
+                    if hasattr(self.ser, "set_buffer_size"):
+                        self.ser.set_buffer_size(rx_size=262144, tx_size=16384)
+                except Exception:
+                    pass
 
     def run(self):
         if self.demo:
@@ -77,11 +86,14 @@ class SerialReader(threading.Thread):
         buf = b""
         while not self.stop_flag.is_set():
             try:
-                line = self.ser.readline()  # reads until \n (LF, 10)
+                # Faster on Win10: read until LF
+                line = self.ser.read_until(b"\n")
                 if not line:
                     continue
                 # Arduino sends ... ;\n\r (LF then CR). We’ll strip and split by ';'
-                text = line.decode(errors="ignore").strip("\r\n")
+                if line.endswith(b"\r"):
+                    line = line[:-1]
+                text = line.decode(errors="ignore").rstrip("\n")
                 if not text:
                     continue
                 parts = [p for p in text.split(";") if p != ""]

@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import os
+from matplotlib.widgets import Button
 from collections import deque
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -289,6 +290,18 @@ def main():
 
     fault_text = ax1.text(0.01, 0.95, "", transform=ax1.transAxes, ha="left", va="top",
                           bbox=dict(boxstyle="round", alpha=0.2))
+    # --- Controls: Stop button (lower right)
+    btn_ax_stop = plt.axes([0.88, 0.01, 0.1, 0.05])  # [left, bottom, width, height] in fig fraction
+    btn_stop = Button(btn_ax_stop, "Stop")
+
+    def on_stop(_event):
+        # Let the finally: block handle file closing
+        try:
+            reader.stop()
+        finally:
+            plt.close("all")
+
+    btn_stop.on_clicked(on_stop)
 
     def update(_frame):
         row = reader.get_latest()
@@ -381,8 +394,12 @@ def main():
         pass
     finally:
         reader.stop()
-        csv_file.flush()
-        csv_file.close()
+        try:
+            if csv_file is not None and not getattr(csv_file, "closed", False):
+                csv_file.flush()
+                csv_file.close()
+        except Exception:
+            pass
         print("[info] Stopped and file closed.")
 
 if __name__ == "__main__":
